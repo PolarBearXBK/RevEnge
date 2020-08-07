@@ -20,7 +20,9 @@ def argsort(df, orig):
     cols = df.columns
     ans = []
     for n in range(len(values)):
-        ans.append([cols[i] + ' = ' + str(orig_values[n, i]) + ', ' + str(values[n, i]) for i in np.argsort(values[n])])
+        #         ans.append([cols[i] + ' = ' + str(orig_values[n, i]) + ', ' + str(values[n, i]) for i in np.argsort(-abs(values[n]))])
+        ans.append(cols[np.argsort(-abs(values[n]))])
+    #         ans.append([cols[i] + ' = {:.2f}'.format(values[n, i]) for i in np.argsort(-abs(values[n]))])
 
     ans = pd.DataFrame(np.stack(ans, axis=1).transpose())
     ans = ans.set_index(df.index)
@@ -29,25 +31,27 @@ def argsort(df, orig):
 
 def batch_contr(model, batch_params, batch_labels, var_dict):
     ans = batch_params.copy()
-
     for col in batch_params.columns:
         variabs = var_dict[col]
-        ln = len(variabs)
-        mid_df = pd.concat([batch_params] * ln).reset_index(drop=True)
+        l = len(variabs)
+        mid_df = pd.concat([batch_params] * l).reset_index(drop=True)
         mid_df[col] = np.stack([variabs] * len(batch_params)).transpose((1, 0)).reshape(-1)
         mid_preds = model.predict_proba(mid_df)
-        mid_preds = np.reshape([i[1] for i in mid_preds], (-1, ln)).mean(axis=1)
+        mid_preds = np.reshape([i[1] for i in mid_preds], (l, -1)).mean(axis=0)
+        #         mid_preds = model.predict(mid_df)
+        #         mid_preds = np.reshape(mid_preds, (l, -1)).mean(axis=0)
 
-        ans[col] = np.divide(batch_labels - mid_preds, batch_labels)
+        ans[col] = mid_preds - batch_labels
 
     return ans
 
 
-def get_contribution(model, df, target=None, batch_size=1000, target_df=None, calculate=False, percentiles=10):
+def get_contribution(model, df, target=None, batch_size=1000, target_df=None, calculate=False):
     if calculate:
         params = df
         labels = model.predict_proba(df)
         labels = [i[1] for i in labels]
+    #         labels = model.predict(df)
     elif target_df is not None:
         params = df
         labels = target_df.values
@@ -57,7 +61,7 @@ def get_contribution(model, df, target=None, batch_size=1000, target_df=None, ca
         params = df.drop(target, axis=1)
         labels = df.target.values
 
-    var_dict = get_variation(df, percentiles=percentiles)
+    var_dict = get_variation(df, percentiles=50)
 
     ans = []
 
@@ -67,8 +71,8 @@ def get_contribution(model, df, target=None, batch_size=1000, target_df=None, ca
                                  params.iloc[i * batch_size: min((i + 1) * batch_size, len(df)), :],
                                  labels[i * batch_size: min((i + 1) * batch_size, len(df))],
                                  var_dict)
-
         ans.append(variations)
+    #         print(variations.head())
 
     ans = pd.concat(ans)
     ans = argsort(ans, params)
